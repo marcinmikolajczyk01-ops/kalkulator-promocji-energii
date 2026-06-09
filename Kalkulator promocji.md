@@ -47,16 +47,36 @@ miesiące + presety) · suwak przesunięcia zużycia + model magazynu (kWh × cy
 skala (liczba klientów, marża na magazynie do porównania) · wykres RDN wg godziny (rozbieżny
 od 0, ujemne na zielono) + tabela kosztu wg miesiąca.
 
-## Moduł PV (dodany 2026-06-09)
-Karta „5 · Własna fotowoltaika (PV)" z suwakiem mocy 1–15 kWp (domyślnie 5).
-- **Dane:** stała `PV` zaszyjna w pliku — profil miesięczny + kształt godzinowy doby wg realnej analizy (uzysk 983,9 kWh/kWp/rok).
-- **Autokonsumpcja:** liczona per dzień, per godzina (NIE na zagregowanych sumach) → `import_dzien = max(0, zuz_dzien − pv_dzien_h)`.
-- **Koszt promocji:** na imporcie netto (zużycie − autokonsumpcja); magazyn też na imporcie netto.
-- **Eksport nadwyżek** (opcja, domyślnie odznaczona): wycena po cenie RDN minus dodatkowe opłaty, dla całego roku (nie tylko okna). Wynik: koszt_promo, wartość eksportu i netto NEXBE.
-- **Mapowanie godzin:** CELLS.h 1..24 → PV.within_day_fraction[m][h===24?0:h].
-- TODO: potwierdzić uzysk 983,9 kWh/kWp/rok poza instalacją referencyjną; ewentualnie zamienić na pole edytowalne.
-- TODO: eksport liczony rocznie (cały rok) — łatwo przełączyć na „tylko okno" jeśli biznes zdecyduje.
-- TODO: brak modelu net-billing/depozytu — uproszczenie; eksport wyceniany po RDN.
+## Moduł PV (rozbudowany 2026-06-09)
+Karta „5 · Własna fotowoltaika (PV)" — suwak 0–15 kWp (krok 0,5; domyślnie 5; 0 = brak PV).
+
+### Architektura danych
+- **Realny profil:** stała `HOURLY` (8 711 godzin z `dane_godzinowe.json`): mo, wk, h, rdn, cons, pvk; `pv_h = kWp * pvk[i]`; autokonsumpcja per godzina.
+- **G11 profil:** stała `CELLS` (576 komórek) + `PV` (within_day_fraction); autokonsumpcja per dzień per godzina dla każdej komórki.
+- `pvk[i]` = 983,9 × monthly_share[mo] / days_in_month[mo] × within_day_fraction[mo][h==24?0:h].
+
+### Wskaźnik niedopasowania (v2, NADRZĘDNY)
+Dane godzinowe zawyżają autokonsumpcję (uśredniają chwilowe piki poboru w ramach godziny). Dotyczy OBU profili — zapis „0 dla realnego" był błędny.
+- Pole „Korekta autokonsumpcji w dół [%]": domyślnie 15 (realny) / 25 (G11); edytowalne; aktualizowane przy zmianie profilu.
+- `korektaEff = (korekta/100) × (1 − tlumik_magazynu)` — magazyn pochłania piki, zmniejsza błąd.
+- `tlumik = min(1, bat×cyc / avg_daily_import)`.
+- `delta_import_window = pvAutoInWindow × korektaEff`; `costMismatch = delta × (meanRdn + adder) / 1000`.
+- Wyniki: widełki SC (model → realnie) i koszt (optymistycznie → ostrożnie). Nagłówek = wariant ostrożny.
+
+### Eksport nadwyżek
+- Checkbox (domyślnie odznaczony) + pole opłat od sprzedanej energii [zł/MWh].
+- Eksport liczony dla całego roku (niezależnie od okna); `wartoscEksportu = (pvExportRdnVol − pvExportTotal×fee) / 1000`.
+- Nagłówek pokazuje netto NEXBE = kostReal − wartoscEksportu.
+
+### Rzeczywiste wartości testowe (3 kWp, 2500 kWh/rok)
+- Realny 3 kWp: SC model ~35%, realnie (15%.) ~29% ✓
+- G11 3 kWp: SC model ~34%, realnie (25%) ~26% (SPEC zakładał ~40%/30% — różnica wynika z mniejszej konsumpcji G11 w południe vs realny klient)
+- 0 kWp: import = całe zużycie ✓
+
+### TODO
+- Potwierdzić uzysk 983,9 kWh/kWp/rok poza instalacją referencyjną.
+- Eksport liczony rocznie — łatwo przełączyć na „tylko okno" jeśli biznes zdecyduje.
+- Brak modelu net-billing/depozytu — uproszczenie; eksport wyceniany po RDN.
 
 ## TODO / pomysły na rozwój
 - Potwierdzić naturę opłaty handlowej (zł/MWh vs zł/mc) i ewentualnie poprawić model.

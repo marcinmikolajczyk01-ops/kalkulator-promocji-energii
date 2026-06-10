@@ -131,5 +131,29 @@ console.log('=== Testy akceptacyjne magazyn (profil REALNY, dane godzinowe) ===\
   console.log('    =>', check(huge.batDisch <= annualDeficit + 1), '\n');
 }
 
+// T6: REGRESJA — tryb standardowy (happy OFF) NIGDY nie podnosi kosztu NEXBE,
+// niezależnie od okna i eksportu (zgłoszony błąd: tanie okno + eksport ON podnosiło koszt).
+{
+  const windows = [
+    ['cały rok',        { dt:'all',  months:allM, hStart:1,  hEnd:24 }],
+    ['weekend 11–16',   { dt:'wknd', months:allM, hStart:11, hEnd:16 }],
+    ['codziennie 11–16',{ dt:'all',  months:allM, hStart:11, hEnd:16 }],
+    ['wieczór 18–21',   { dt:'all',  months:allM, hStart:18, hEnd:21 }],
+    ['wakacje 6–7',     { dt:'all',  months:[6,7], hStart:1, hEnd:24 }],
+  ];
+  console.log('T6  Standard (happy OFF) nie podnosi kosztu NEXBE — żadne okno / eksport');
+  let worst = -Infinity, worstNm = '';
+  for (const exp of [false, true])
+    for (const pv of [0, 5])
+      for (const [nm, w] of windows) {
+        const nb  = run(Object.assign({ pvKwp:pv, pvExport:exp, bat:0 }, w));
+        const off = run(Object.assign({ pvKwp:pv, pvExport:exp, bat:10, cyc:1, batHappy:false }, w));
+        const d = off.kostReal - nb.kostReal;          // >0 = magazyn POGORSZYŁ pozycję NEXBE
+        if (d > worst) { worst = d; worstNm = `${nm}, PV ${pv}, eksport ${exp?'ON':'OFF'}`; }
+      }
+  console.log('    najgorsza delta (mag − bez mag) =', z(worst), '@', worstNm);
+  console.log('    =>', check(worst <= 0.5), '\n');   // dopuszczalny szum zaokrągleń
+}
+
 console.log(allPass ? '>>> WSZYSTKIE TESTY PRZESZŁY ✓' : '>>> SĄ BŁĘDY ✗');
 process.exit(allPass ? 0 : 1);

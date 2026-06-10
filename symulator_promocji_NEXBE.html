@@ -127,7 +127,7 @@ b.acc{color:var(--accent)}
         </div>
         <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400">
           <input type="checkbox" id="batHappy"> Ładowanie w happy hours dozwolone</label>
-        <div class="hint">Realny profil: magazyn liczony godzinowo per doba (dyspozycja merit-order, sprawność 90%, oddaje nie więcej niż realny deficyt dnia). Odznaczone = standardowe zarządzanie (ładuj tanio, rozładuj drogo → koszt spada). Zaznaczone = wolno ładować w oknie promocji (klient korzysta poza oknem, ekspozycja NEXBE rośnie). G11 nadal model uproszczony (brak danych godzinowych).</div>
+        <div class="hint">Realny profil: magazyn liczony godzinowo per doba (sprawność 90%, oddaje nie więcej niż realny deficyt dnia). <b>Odznaczone = zarządzanie korzystne cenowo:</b> pochłania nadwyżki PV i ładuje się w tanich godzinach, a rozładowuje, by zbić drogi import w oknie — nigdy nie podnosi kosztu NEXBE (w najgorszym razie neutralnie). <b>Zaznaczone = wolno ładować w oknie promocji</b> (klient korzysta poza oknem → ekspozycja NEXBE rośnie przy cenach dodatnich). G11 nadal model uproszczony (brak danych godzinowych).</div>
       </div>
 
       <div class="card" style="margin-top:16px">
@@ -348,21 +348,28 @@ function compute(){
         };
 
         if(!happy){
-          // STANDARD: ekonomiczny merit-order z warunkiem oplacalnosci.
-          // Paruj najdrozszy deficyt (rozladowanie) z najtanszym zrodlem ladowania,
-          // dopoki wartosc wypartej energii > koszt doladowania ze stratami (p_d > p_c/ETA).
-          const dis=[...Array(n).keys()].filter(j=>deficit[j]>1e-12)
+          // STANDARD: dyspozycja minimalizująca koszt NETTO NEXBE — i nigdy go nie podnosząca.
+          // NEXBE płaci tylko za import w OKNIE (oraz traci kredyt eksportu, gdy eksport ON).
+          // Wartość rozładowania liczy się tylko, gdy zbija import w oknie o dodatnim p_h.
+          //   sink (gdzie rozładować): godzina W OKNIE z deficytem i p_h>0; wartość = p_h.
+          // Koszt źródła ładowania DLA NEXBE:
+          //   • sieć POZA oknem  → 0  (płaci klient, nie NEXBE)
+          //   • sieć W oknie     → p_h (podnosi import w oknie; gdy p_h<0 to zysk)
+          //   • PV (nadwyżka)    → utracony kredyt eksportu (rdn−opłata) przy eksporcie ON, inaczej 0
+          //     (przy eksporcie ON magazyn NIE pochłania zyskownej nadwyżki PV — zostaje na eksport).
+          // Paruj najdroższy sink z najtańszym źródłem dopóki p_d > p_c/ETA (każdy ruch obniża koszt NEXBE).
+          const dis=[...Array(n).keys()].filter(j=>deficit[j]>1e-12&&inW[j]&&p[j]>0)
                     .map(j=>({j,cap:deficit[j],pr:p[j]})).sort((a,b)=>b.pr-a.pr);
-          // zrodla ladowania: PV (koszt = utracony kredyt eksportu/ jedn., 0 gdy eksport off) + siec
           const chg=[];
           for(let j=0;j<n;j++) if(surplus[j]>1e-12)
-            chg.push({kind:'pv',j,cap:surplus[j],cost:pvExportOn?Math.max(0,rdnH[j]-pvExportFee):0});
-          for(let j=0;j<n;j++) chg.push({kind:'grid',j,cap:Infinity,cost:p[j]});
-          chg.sort((a,b)=>a.cost-b.cost);
+            chg.push({kind:'pv',j,cap:surplus[j],cost:pvExportOn?(rdnH[j]-pvExportFee):0});
+          for(let j=0;j<n;j++) chg.push({kind:'grid',j,cap:Infinity,cost:inW[j]?p[j]:0});
+          // sortuj rosnąco po koszcie; przy remisie preferuj PV (rośnie autokonsumpcja)
+          chg.sort((a,b)=>(a.cost-b.cost)||((a.kind==='pv'?0:1)-(b.kind==='pv'?0:1)));
           let thrLeft=thr,di=0,ci=0;
           while(di<dis.length&&ci<chg.length&&thrLeft>1e-9){
             const d=dis[di],c=chg[ci];
-            if(d.pr<=c.cost/ETA)break;            // dalej nieoplacalnie (listy posortowane)
+            if(d.pr<=c.cost/ETA)break;            // dalej nie obniża już kosztu NEXBE — stop
             const q=Math.min(d.cap,thrLeft,c.cap*ETA);
             if(q<=1e-12){if(d.cap<=1e-12)di++;else ci++;continue;}
             grid[d.j]-=q;d.cap-=q;thrLeft-=q;batDisch+=q;

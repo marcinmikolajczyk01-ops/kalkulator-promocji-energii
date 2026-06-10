@@ -85,8 +85,15 @@ G11 zostaje na starym modelu wolumenowym (`extraBat = bat*cyc*batDays`) — brak
 - Parametry: `bat` [kWh] = pojemność C, `cyc` cykle/dobę (domyślnie 1), `ETA=0.90` (stała w kodzie).
 - Checkbox **„Ładowanie w happy hours dozwolone"** (`#batHappy`, domyślnie OFF).
 - Per doba: `thr=C*cyc`, `Dload=Σ deficit`, `D=min(thr,Dload)` (oddaje **nie więcej niż realny deficyt**), `Chg=D/ETA`.
-- **OFF (standard):** ekonomiczny merit-order z warunkiem opłacalności — paruje najdroższy deficyt
-  (rozładowanie) z najtańszym źródłem (PV→sieć), dopóki `p_d > p_c/ETA`. Magazyn obniża koszt.
+- **OFF (standard) = minimalizacja kosztu NETTO NEXBE, nigdy go nie podnosi** (poprawka 2026-06-10).
+  NEXBE płaci tylko za import w oknie (i traci kredyt eksportu przy eksporcie ON), więc dyspozycja:
+  - rozładowuje TYLKO w godziny W OKNIE o dodatnim `p_h` (zbija drogi import, za który płaci NEXBE);
+  - ładuje z najtańszych źródeł DLA NEXBE: sieć poza oknem = koszt 0 (płaci klient), sieć w oknie = `p_h`
+    (gdy ujemny — zysk), PV = utracony kredyt eksportu `(rdn−opłata)` przy eksporcie ON / 0 przy OFF;
+  - przy remisie kosztu preferuje PV (rośnie autokonsumpcja);
+  - paruje najdroższy sink z najtańszym źródłem dopóki `p_d > p_c/ETA` → każdy ruch obniża koszt NEXBE.
+  - Wcześniejszy błąd: arbitraż minimalizował koszt CAŁKOWITY klienta (rozładowanie poza oknem,
+    pochłanianie zyskownej nadwyżki PV) → przy eksporcie ON + tanim oknie PODNOSIŁ koszt NEXBE.
 - **ON (happy hours):** rozładowuje najpierw POZA oknem (korzyść klienta), ładuje najpierw W OKNIE
   (darmowe dla klienta) → import w oknie = ekspozycja NEXBE rośnie przy cenach dodatnich.
 - Źródło ładowania: najpierw nadwyżka PV (przenosi z eksportu do autokonsumpcji, pomniejsza kredyt

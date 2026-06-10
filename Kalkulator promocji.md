@@ -80,8 +80,10 @@ Dane godzinowe zawyżają autokonsumpcję (uśredniają chwilowe piki poboru w r
 - Brak modelu net-billing/depozytu — uproszczenie; eksport wyceniany po RDN.
 
 ## Magazyn energii — dyspozycja dobowa (2026-06-10, wg magazyn_SPEC.md)
-Profil REALNY: magazyn liczony **godzinowo per doba** (grupowanie po `HOURLY.d`), merit-order.
-G11 zostaje na starym modelu wolumenowym (`extraBat = bat*cyc*batDays`) — brak danych godzinowych.
+Wspólna funkcja `dispatchDay()` (przed `compute()`) liczy dyspozycję na JEDNEJ dobie i jest używana
+przez OBA profile. Realny: doba kalendarzowa (grupowanie po `HOURLY.d`). G11: doba reprezentacyjna
+(CELLS pogrupowane po `mo_wk`, 24 godziny), wynik skalowany przez liczbę dni `DAYS[mo_wk]`.
+Magazyn jest wliczony w `baseVol` (nie ma już osobnego `extraBat`).
 - Parametry: `bat` [kWh] = pojemność C, `cyc` cykle/dobę (domyślnie 1), `ETA=0.90` (stała w kodzie).
 - Checkbox **„Ładowanie w happy hours dozwolone"** (`#batHappy`, domyślnie OFF).
 - Per doba: `thr=C*cyc`, `Dload=Σ deficit`, `D=min(thr,Dload)` (oddaje **nie więcej niż realny deficyt**), `Chg=D/ETA`.

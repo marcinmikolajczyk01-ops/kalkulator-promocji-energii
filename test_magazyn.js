@@ -141,18 +141,33 @@ console.log('=== Testy akceptacyjne magazyn (profil REALNY, dane godzinowe) ===\
     ['wieczór 18–21',   { dt:'all',  months:allM, hStart:18, hEnd:21 }],
     ['wakacje 6–7',     { dt:'all',  months:[6,7], hStart:1, hEnd:24 }],
   ];
-  console.log('T6  Standard (happy OFF) nie podnosi kosztu NEXBE — żadne okno / eksport');
+  console.log('T6  Standard (happy OFF) nie podnosi kosztu NEXBE — OBA profile, każde okno / eksport');
   let worst = -Infinity, worstNm = '';
-  for (const exp of [false, true])
-    for (const pv of [0, 5])
-      for (const [nm, w] of windows) {
-        const nb  = run(Object.assign({ pvKwp:pv, pvExport:exp, bat:0 }, w));
-        const off = run(Object.assign({ pvKwp:pv, pvExport:exp, bat:10, cyc:1, batHappy:false }, w));
-        const d = off.kostReal - nb.kostReal;          // >0 = magazyn POGORSZYŁ pozycję NEXBE
-        if (d > worst) { worst = d; worstNm = `${nm}, PV ${pv}, eksport ${exp?'ON':'OFF'}`; }
-      }
+  for (const prof of ['real', 'slp'])
+    for (const exp of [false, true])
+      for (const pv of [0, 5])
+        for (const [nm, w] of windows) {
+          const base = { prof, kwh:2500, pvKwp:pv, pvExport:exp };
+          const nb  = run(Object.assign({}, base, { bat:0 }, w));
+          const off = run(Object.assign({}, base, { bat:10, cyc:1, batHappy:false }, w));
+          const d = off.kostReal - nb.kostReal;          // >0 = magazyn POGORSZYŁ pozycję NEXBE
+          if (d > worst) { worst = d; worstNm = `${prof}, ${nm}, PV ${pv}, eksport ${exp?'ON':'OFF'}`; }
+        }
   console.log('    najgorsza delta (mag − bez mag) =', z(worst), '@', worstNm);
   console.log('    =>', check(worst <= 0.5), '\n');   // dopuszczalny szum zaokrągleń
+}
+
+// T7: G11 — magazyn obniża koszt (cały rok, z PV i bez), tak jak dla profilu realnego
+{
+  const winAll = { prof:'slp', kwh:2500, dt:'all', months:allM, hStart:1, hEnd:24 };
+  const nb  = run(Object.assign({}, winAll, { pvKwp:0, bat:0 }));
+  const off = run(Object.assign({}, winAll, { pvKwp:0, bat:10, cyc:1 }));
+  const nbP = run(Object.assign({}, winAll, { pvKwp:5, bat:0 }));
+  const offP= run(Object.assign({}, winAll, { pvKwp:5, bat:10, cyc:1 }));
+  console.log('T7  Profil G11 (doba reprezentacyjna) — magazyn obniża koszt');
+  console.log('    bez PV: bez mag', z(nb.kostReal), '→ mag', z(off.kostReal), '| Δ', z(off.kostReal-nb.kostReal));
+  console.log('    PV 5kWp: bez mag', z(nbP.kostReal), '→ mag', z(offP.kostReal), '| Δ', z(offP.kostReal-nbP.kostReal));
+  console.log('    =>', check(off.kostReal < nb.kostReal - 0.5 && offP.kostReal < nbP.kostReal - 0.5), '\n');
 }
 
 console.log(allPass ? '>>> WSZYSTKIE TESTY PRZESZŁY ✓' : '>>> SĄ BŁĘDY ✗');

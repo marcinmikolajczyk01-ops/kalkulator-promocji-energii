@@ -14,7 +14,7 @@ let script = m[1];
 script = script.replace('  // hour chart (na imporcie netto)',
   'globalThis.__out={cost,kostModel,kostReal,kostPromo,costBase,costBaseNB,batSavings,batDisch,' +
   'baseVol,baseVolNB,winHrs,negHrs,annualVol,pvAutoTotal,pvProdTotal,wartoscEksportu,meanRdn,' +
-  'batChgGrid,batChgPv,extraVol,totalVol};\n  // hour chart (na imporcie netto)');
+  'batChgGrid,batChgPv,extraVol,totalVol,pvExportWin,pvExportTotal};\n  // hour chart (na imporcie netto)');
 // Eksponuj compute/state po definicji
 script += '\nglobalThis.__compute=compute;globalThis.__state=state;';
 
@@ -168,6 +168,26 @@ console.log('=== Testy akceptacyjne magazyn (profil REALNY, dane godzinowe) ===\
   console.log('    bez PV: bez mag', z(nb.kostReal), '→ mag', z(off.kostReal), '| Δ', z(off.kostReal-nb.kostReal));
   console.log('    PV 5kWp: bez mag', z(nbP.kostReal), '→ mag', z(offP.kostReal), '| Δ', z(offP.kostReal-nbP.kostReal));
   console.log('    =>', check(off.kostReal < nb.kostReal - 0.5 && offP.kostReal < nbP.kostReal - 0.5), '\n');
+}
+
+// T8: Eksport rozliczany TYLKO w oknie promocji (nie dla całego roku).
+{
+  const pv = { pvKwp:5, pvExport:true, pvExportFee:25, bat:0 };
+  const yr  = run(Object.assign({}, pv, { dt:'all',  months:allM, hStart:1,  hEnd:24 })); // cały rok
+  const eve = run(Object.assign({}, pv, { dt:'all',  months:allM, hStart:18, hEnd:21 })); // wieczór — brak nadwyżki PV
+  const mid = run(Object.assign({}, pv, { dt:'all',  months:allM, hStart:11, hEnd:16 })); // południe — nadwyżka PV
+  console.log('T8  Eksport liczony w oknie, nie dla całego roku');
+  console.log('    eksport roczny (KPI, całość) =', yr.pvExportTotal.toFixed(0), 'kWh');
+  console.log('    okno cały rok  : eksport w oknie', yr.pvExportWin.toFixed(0), 'kWh | wartość', z(yr.wartoscEksportu));
+  console.log('    okno wieczór   : eksport w oknie', eve.pvExportWin.toFixed(0), 'kWh | wartość', z(eve.wartoscEksportu));
+  console.log('    okno południe  : eksport w oknie', mid.pvExportWin.toFixed(0), 'kWh | wartość', z(mid.wartoscEksportu));
+  // cały rok = pełny eksport; wieczór ≈ 0 (brak nadwyżki PV w oknie); południe pomiędzy
+  console.log('    =>', check(
+    Math.abs(yr.pvExportWin - yr.pvExportTotal) < 1 &&        // okno=rok ⇒ eksport w oknie = roczny
+    eve.pvExportWin < 0.1 * yr.pvExportTotal &&               // wieczór: znikomy eksport w oknie
+    mid.pvExportWin > eve.pvExportWin &&                      // południe > wieczór
+    mid.pvExportWin < yr.pvExportTotal                        // ale mniej niż roczny
+  ), '\n');
 }
 
 console.log(allPass ? '>>> WSZYSTKIE TESTY PRZESZŁY ✓' : '>>> SĄ BŁĘDY ✗');

@@ -64,10 +64,16 @@ Dane godzinowe zawyżają autokonsumpcję (uśredniają chwilowe piki poboru w r
 - `delta_import_window = pvAutoInWindow × korektaEff`; `costMismatch = delta × (meanRdn + adder) / 1000`.
 - Wyniki: widełki SC (model → realnie) i koszt (optymistycznie → ostrożnie). Nagłówek = wariant ostrożny.
 
-### Eksport nadwyżek
+### Eksport nadwyżek (rozliczany W OKNIE — poprawka 2026-06-10)
 - Checkbox (domyślnie odznaczony) + pole opłat od sprzedanej energii [zł/MWh].
-- Eksport liczony dla całego roku (niezależnie od okna); `wartoscEksportu = (pvExportRdnVol − pvExportTotal×fee) / 1000`.
-- Nagłówek pokazuje netto NEXBE = kostReal − wartoscEksportu.
+- **Eksport rozliczany TYLKO w oknie promocji** (NEXBE bilansuje handlowo pobór i oddanie klienta
+  w czasie promocji; poza oknem energię rozlicza zwykły sprzedawca). Osobne akumulatory `pvExportWin`
+  / `pvExportWinRdn` (suma tylko `inW`); `wartoscEksportu = (pvExportWinRdn − pvExportWin×fee)/1000`.
+- W trybie OFF magazyn pochłania nadwyżkę PV W OKNIE tylko, gdy to się opłaca NEXBE (koszt = utracony
+  kredyt eksportu w oknie); nadwyżkę POZA oknem może brać za darmo (eksport poza oknem nie jest NEXBE).
+- `pvExportTotal`/`pvExportRdnVol` zostają ROCZNE — zasilają KPI „Oddana do sieci / rok (eksport)".
+- Nagłówek: netto NEXBE = kostReal − wartoscEksportu. Breakdown pokazuje „Wartość eksportu w oknie (kWh)".
+- Skutek: wąskie okna bez nadwyżki PV (np. wieczór) nie dostają już fałszywego kredytu za roczny eksport.
 
 ### Rzeczywiste wartości testowe (3 kWp, 2500 kWh/rok)
 - Realny 3 kWp: SC model ~35%, realnie (15%.) ~29% ✓

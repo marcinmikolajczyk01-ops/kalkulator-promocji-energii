@@ -143,7 +143,7 @@ b.acc{color:var(--accent)}
           <label>Dodatkowe opłaty od sprzedanej energii [zł/MWh]</label>
           <input type="number" id="pvExportFee" value="0" step="5" min="0">
         </div>
-        <div class="hint" style="margin-top:6px">Eksport liczony dla całego roku (niezależnie od okna promocji). Autokonsumpcja liczona per godzina — redukcja importu w oknach południowych jest największa.</div>
+        <div class="hint" style="margin-top:6px">Eksport rozliczany <b>tylko w oknie promocji</b> — NEXBE bilansuje handlowo pobór i oddanie klienta w czasie promocji (wartość eksportu w oknie pomniejsza koszt zakupu energii w oknie). Poza oknem energię rozlicza zwykły sprzedawca. Autokonsumpcja liczona per godzina — redukcja importu w oknach południowych jest największa.</div>
         <label style="margin-top:14px">Korekta autokonsumpcji w dół [%]</label>
         <input type="number" id="pvMismatch" value="15" step="1" min="0" max="50">
         <div class="hint">Dane godzinowe zawyżają autokonsumpcję (uśredniają chwilowe piki poboru). G11 bardziej, bo to średnia kohorty. Z magazynem zmniejsz. Realny domyślnie 15%, G11 25%.</div>
@@ -301,7 +301,7 @@ function dispatchDay(n, deficit, surplus, p, rdnH, inW, o){
                 .map(j=>({j,cap:deficit[j],pr:p[j]})).sort((a,b)=>b.pr-a.pr);
       const chg=[];
       for(let j=0;j<n;j++) if(surLeft[j]>1e-12)
-        chg.push({kind:'pv',j,cap:surLeft[j],cost:o.pvExportOn?(rdnH[j]-o.pvExportFee):0});
+        chg.push({kind:'pv',j,cap:surLeft[j],cost:(o.pvExportOn&&inW[j])?(rdnH[j]-o.pvExportFee):0});
       for(let j=0;j<n;j++) chg.push({kind:'grid',j,cap:Infinity,cost:inW[j]?p[j]:0});
       chg.sort((a,b)=>(a.cost-b.cost)||((a.kind==='pv'?0:1)-(b.kind==='pv'?0:1)));
       let thrLeft=thr,di=0,ci=0;
@@ -366,6 +366,7 @@ function compute(){
 
   let baseVol=0,wRdnVol=0,negHrs=0,winHrs=0,annualVol=0,batDays=0;
   let pvProdTotal=0,pvAutoTotal=0,pvAutoInWindow=0,pvExportTotal=0,pvExportRdnVol=0;
+  let pvExportWin=0,pvExportWinRdn=0;     // eksport TYLKO w oknie promocji (rozliczany handlowo przez NEXBE)
   let baseVolNB=0,wRdnVolNB=0;            // baza BEZ magazynu (import w oknie) — do delty kosztu
   let batChgGrid=0,batChgPv=0,batDisch=0; // bilans magazynu (kWh) — do noty
   const moAgg={};const qualMonthDt=new Set();
@@ -395,11 +396,12 @@ function compute(){
         inW[j]=inWindowH(HOURLY.mo[i],HOURLY.wk[i],HOURLY.h[i]);
         annualVol+=consH;
         if(pvEnabled){pvProdTotal+=pvH;pvAutoTotal+=selfH;pvExportTotal+=sur;pvExportRdnVol+=sur*r;
-          if(inW[j])pvAutoInWindow+=selfH;}
+          if(inW[j]){pvAutoInWindow+=selfH;pvExportWin+=sur;pvExportWinRdn+=sur*r;}}
       }
       const res=dispatchDay(n,deficit,surplus,p,rdnH,inW,batOpt);
       for(let j=0;j<n;j++) if(pvEnabled&&res.pvCharge[j]>1e-12){ // PV przeniesione z eksportu do autokonsumpcji
-        pvAutoTotal+=res.pvCharge[j];pvExportTotal-=res.pvCharge[j];pvExportRdnVol-=res.pvCharge[j]*rdnH[j];}
+        pvAutoTotal+=res.pvCharge[j];pvExportTotal-=res.pvCharge[j];pvExportRdnVol-=res.pvCharge[j]*rdnH[j];
+        if(inW[j]){pvExportWin-=res.pvCharge[j];pvExportWinRdn-=res.pvCharge[j]*rdnH[j];}}
       batDisch+=res.disch;batChgGrid+=res.chgGrid;batChgPv+=res.chgPv;
       for(let j=0;j<n;j++){ // akumulacja okna z importu PO magazynie + baza bez magazynu
         if(!inW[j])continue;
@@ -431,11 +433,12 @@ function compute(){
         rdnH[j]=r; deficit[j]=def; surplus[j]=sur; p[j]=r+adder;
         inW[j]=inWindow(c); moA[j]=c.mo; wkA[j]=c.wk;
         if(pvEnabled){pvProdTotal+=pvDzienH*days;pvAutoTotal+=selfH*days;pvExportTotal+=sur*days;pvExportRdnVol+=sur*r*days;
-          if(inW[j])pvAutoInWindow+=selfH*days;}
+          if(inW[j]){pvAutoInWindow+=selfH*days;pvExportWin+=sur*days;pvExportWinRdn+=sur*r*days;}}
       }
       const res=dispatchDay(n,deficit,surplus,p,rdnH,inW,batOpt);
       for(let j=0;j<n;j++) if(pvEnabled&&res.pvCharge[j]>1e-12){
-        pvAutoTotal+=res.pvCharge[j]*days;pvExportTotal-=res.pvCharge[j]*days;pvExportRdnVol-=res.pvCharge[j]*rdnH[j]*days;}
+        pvAutoTotal+=res.pvCharge[j]*days;pvExportTotal-=res.pvCharge[j]*days;pvExportRdnVol-=res.pvCharge[j]*rdnH[j]*days;
+        if(inW[j]){pvExportWin-=res.pvCharge[j]*days;pvExportWinRdn-=res.pvCharge[j]*rdnH[j]*days;}}
       batDisch+=res.disch*days;batChgGrid+=res.chgGrid*days;batChgPv+=res.chgPv*days;
       for(let j=0;j<n;j++){
         if(!inW[j])continue;
@@ -476,8 +479,8 @@ function compute(){
   const scModel=pvProdTotal>0?100*pvAutoTotal/pvProdTotal:0;
   const scReal=pvProdTotal>0?100*pvAutoTotal*(1-korektaEff)/pvProdTotal:0;
 
-  // eksport
-  const wartoscEksportu=pvExportOn?(pvExportRdnVol-pvExportTotal*pvExportFee)/1000:0;
+  // eksport — rozliczany TYLKO w oknie (NEXBE bilansuje pobor i oddanie klienta w czasie promocji)
+  const wartoscEksportu=pvExportOn?(pvExportWinRdn-pvExportWin*pvExportFee)/1000:0;
 
   // koszt: model (optymistyczny, bez korekty mismatch) i ostrozny (z korekta)
   const kostModel=kostPromo-wartoscEksportu;
@@ -536,7 +539,7 @@ function compute(){
     if(pvExportOn){
       const nc=kostReal<0?'#0a7d3c':'inherit';
       html+=`<span style="color:var(--ink2)">● Koszt promocji: <b>${f0(kostPromo)} zł</b></span> &nbsp; `+
-            `<span style="color:#1f8f4e">● Wartość eksportu: <b>${f0(wartoscEksportu)} zł</b></span> &nbsp; `+
+            `<span style="color:#1f8f4e">● Wartość eksportu w oknie (${f0(pvExportWin)} kWh): <b>${f0(wartoscEksportu)} zł</b></span> &nbsp; `+
             `<span style="color:${nc}">● Netto: <b>${kostReal<0?'+ ':''} ${f0(Math.abs(kostReal))} zł</b></span><br>`;
     }
     if(costMismatch>0.5){

@@ -171,15 +171,16 @@ b.acc{color:var(--accent)}
       <div class="card">
         <h2>Wynik na 1 klienta</h2>
         <div class="kpi">
-          <div class="box"><div class="lab">Energia oddana / rok</div><div class="val mono" id="kVol">—</div></div>
+          <div class="box"><div class="lab">Energia pobrana w oknie / rok</div><div class="val mono" id="kVol">—</div></div>
           <div class="box"><div class="lab">Udział w zużyciu</div><div class="val mono" id="kShare">—</div></div>
           <div class="box"><div class="lab">Śr. RDN w oknie</div><div class="val mono" id="kRdn">—</div></div>
           <div class="box"><div class="lab">Godzin ujemnych w oknie</div><div class="val mono" id="kNeg">—</div></div>
         </div>
-        <div class="kpi" id="pvKpi" style="display:none;margin-top:8px;grid-template-columns:1fr 1fr 1fr">
-          <div class="box"><div class="lab">Produkcja PV</div><div class="val mono" id="kPvProd">—</div></div>
+        <div class="kpi" id="pvKpi" style="display:none;margin-top:8px">
+          <div class="box"><div class="lab">Produkcja PV / rok</div><div class="val mono" id="kPvProd">—</div></div>
           <div class="box"><div class="lab">Autokonsumpcja</div><div class="val mono" id="kPvAuto">—</div><div id="kPvAutoReal" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
-          <div class="box"><div class="lab">Import z sieci</div><div class="val mono" id="kPvImport">—</div></div>
+          <div class="box"><div class="lab">Import z sieci / rok (całość)</div><div class="val mono" id="kPvImport">—</div></div>
+          <div class="box"><div class="lab">Oddana do sieci / rok (eksport)</div><div class="val mono" id="kPvExport">—</div></div>
         </div>
         <div style="font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:3px">Z czego składa się koszt (zł/rok/klient)</div>
         <div class="bd" id="bd"></div>
@@ -514,6 +515,8 @@ function compute(){
     document.getElementById('kPvAuto').textContent=scModel.toFixed(0)+'%';
     document.getElementById('kPvAutoReal').textContent='realnie: ~'+scReal.toFixed(0)+'%';
     document.getElementById('kPvImport').innerHTML=f0(annualVol-pvAutoTotal)+' <small>kWh</small>';
+    document.getElementById('kPvExport').innerHTML=f0(pvExportTotal)+' <small>kWh</small>'+
+      (pvExportOn?'':' <small style="color:var(--ink2)">(bez rozliczenia)</small>');
   }
 
   // breakdown bar

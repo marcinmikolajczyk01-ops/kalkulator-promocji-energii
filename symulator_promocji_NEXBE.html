@@ -125,9 +125,7 @@ b.acc{color:var(--accent)}
           <div><label>Magazyn [kWh]</label><input type="number" id="bat" value="0" step="1"></div>
           <div><label>Cykli/dobę</label><input type="number" id="cyc" value="1" step="0.5"></div>
         </div>
-        <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400">
-          <input type="checkbox" id="batHappy"> Ładowanie w happy hours dozwolone</label>
-        <div class="hint">Realny profil: magazyn liczony godzinowo per doba (sprawność 90%, oddaje nie więcej niż realny deficyt dnia). <b>Odznaczone = zarządzanie korzystne cenowo:</b> pochłania nadwyżki PV i ładuje się w tanich godzinach, a rozładowuje, by zbić drogi import w oknie — nigdy nie podnosi kosztu NEXBE (w najgorszym razie neutralnie). <b>Zaznaczone = wolno ładować w oknie promocji</b> (klient korzysta poza oknem → ekspozycja NEXBE rośnie przy cenach dodatnich). G11 liczony tak samo, ale na dobie reprezentacyjnej miesiąca (gładszy profil → magazyn pozornie odrobinę skuteczniejszy).</div>
+        <div class="hint">Magazyn pracuje ekonomicznie przez <b>cały rok, niezależnie od okna promocji</b>: pochłania nadwyżki PV, ładuje się w tanich godzinach, rozładowuje w drogich (sprawność 90%, oddaje nie więcej niż realny deficyt dnia). To cecha instalacji klienta — dane roczne zależą tylko od PV, magazynu i zużycia. Koszt promocji = wycinek przepływów wpadający w okno (w drogim oknie magazyn go zbija; w tanim oknie z eksportem może lekko podnieść, bo klient magazynuje PV zamiast je eksportować). G11 liczony tak samo, ale na dobie reprezentacyjnej miesiąca.</div>
       </div>
 
       <div class="card" style="margin-top:16px">
@@ -174,14 +172,15 @@ b.acc{color:var(--accent)}
         <div class="kpi">
           <div class="box"><div class="lab">Energia pobrana w oknie / rok</div><div class="val mono" id="kVol">—</div><div id="kShare" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
           <div class="box"><div class="lab">Oddana w oknie (eksport) / rok</div><div class="val mono" id="kExportWin">—</div><div id="kExportWinModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
-          <div class="box"><div class="lab">Autokonsumpcja w oknie</div><div class="val mono" id="kAutoWin">—</div><div id="kAutoWinModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
+          <div class="box"><div class="lab">Produkcja PV w oknie / rok</div><div class="val mono" id="kProdWin">—</div></div>
+          <div class="box"><div class="lab">Autokonsumpcja PV w oknie</div><div class="val mono" id="kAutoWin">—</div><div id="kAutoWinModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
           <div class="box"><div class="lab">Śr. RDN w oknie</div><div class="val mono" id="kRdn">—</div></div>
           <div class="box"><div class="lab">Godzin ujemnych w oknie</div><div class="val mono" id="kNeg">—</div></div>
         </div>
         <div id="pvKpiHdr" style="display:none;font-size:11px;font-weight:700;color:var(--ink2);letter-spacing:.04em;text-transform:uppercase;margin:12px 0 6px;border-bottom:1px solid var(--line);padding-bottom:3px">Instalacja PV / klient — rocznie</div>
         <div class="kpi" id="pvKpi" style="display:none;margin-top:0">
           <div class="box"><div class="lab">Produkcja PV / rok</div><div class="val mono" id="kPvProd">—</div></div>
-          <div class="box"><div class="lab">Autokonsumpcja / rok</div><div class="val mono" id="kPvAuto">—</div><div id="kPvAutoModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
+          <div class="box"><div class="lab">Autokonsumpcja PV / rok</div><div class="val mono" id="kPvAuto">—</div><div id="kPvAutoModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
           <div class="box"><div class="lab">Energia pobrana / rok</div><div class="val mono" id="kPvImport">—</div></div>
           <div class="box"><div class="lab">Oddana do sieci / rok (eksport)</div><div class="val mono" id="kPvExport">—</div><div id="kPvExportModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
         </div>
@@ -255,7 +254,6 @@ hS.oninput=hSync;hE.oninput=hSync;
 document.getElementById('pvExport').onchange=()=>{
   document.getElementById('pvExportFeeWrap').style.display=document.getElementById('pvExport').checked?'block':'none';
   compute();};
-document.getElementById('batHappy').onchange=compute;
 
 document.querySelectorAll('#presets button').forEach(b=>b.onclick=()=>{
   const pr=b.dataset.pr;const setDt=d=>{state.dt=d;document.querySelectorAll('#dtSeg button').forEach(x=>x.classList.toggle('on',x.dataset.d===d));};
@@ -283,68 +281,39 @@ function inWindowH(mo,wk,h){
 
 // Dyspozycja magazynu na POJEDYNCZEJ DOBIE (realny dzien albo doba reprezentacyjna G11).
 // Czysta funkcja — nie rusza akumulatorow globalnych. Per godzina doby (tablice dlugosci n):
-//   deficit[j],surplus[j] [kWh]; p[j]=rdn+rdnAdj+adder [zl/MWh]; rdnH[j]=rdn+rdnAdj; inW[j]=w oknie?
-// o = {batOn,happy,thr=bat*cyc,ETA,pvExportOn,pvExportFee}.
-// Zwraca: grid[] (import po magazynie), pvCharge[] (PV przeniesione z eksportu do autokonsumpcji),
-//   disch/chgGrid/chgPv [kWh]. OFF = minimalizacja kosztu NETTO NEXBE (nigdy go nie podnosi);
-//   ON (happy hours) = rozladuj poza oknem, laduj w oknie (ekspozycja NEXBE).
-function dispatchDay(n, deficit, surplus, p, rdnH, inW, o){
+//   deficit[j],surplus[j] [kWh]; p[j]=rdn+rdnAdj+adder [zl/MWh] (koszt energii); rdnH[j]=rdn+rdnAdj.
+// o = {batOn,thr=bat*cyc,ETA,pvExportOn,pvExportFee}.
+// JEDEN tryb: magazyn minimalizuje KOSZT ENERGII niezaleznie od okna promocji (cecha instalacji
+// klienta). Paruj najdrozszy deficyt (rozladowanie, wartosc=p) z najtanszym zrodlem ladowania
+// (PV: utracony kredyt eksportu rdn-fee gdy eksport ON, inaczej 0; siec: p), dopoki p_d>p_c/ETA.
+// Zwraca: grid[] (import po magazynie), pvCharge[] (PV z eksportu do autokonsumpcji), disch/chgGrid/chgPv.
+function dispatchDay(n, deficit, surplus, p, rdnH, o){
   const grid=deficit.slice();
   const pvCharge=new Array(n).fill(0);
   let disch=0, chgGrid=0, chgPv=0;
   if(o.batOn && o.thr>1e-12){
     const ETA=o.ETA, thr=o.thr;
     const surLeft=surplus.slice();
-    let Dload=0; for(let j=0;j<n;j++)Dload+=deficit[j];
-    if(!o.happy){
-      // STANDARD: paruj najdrozszy import w OKNIE (sink) z najtanszym DLA NEXBE zrodlem, dopoki
-      // p_d>p_c/ETA. Siec poza oknem koszt 0 (placi klient); PV koszt = utracony kredyt eksportu
-      // (rdn-oplata) przy eksporcie ON, inaczej 0 (rosnie autokonsumpcja).
-      const dis=[...Array(n).keys()].filter(j=>deficit[j]>1e-12&&inW[j]&&p[j]>0)
-                .map(j=>({j,cap:deficit[j],pr:p[j]})).sort((a,b)=>b.pr-a.pr);
-      const chg=[];
-      for(let j=0;j<n;j++) if(surLeft[j]>1e-12)
-        chg.push({kind:'pv',j,cap:surLeft[j],cost:(o.pvExportOn&&inW[j])?(rdnH[j]-o.pvExportFee):0});
-      for(let j=0;j<n;j++) chg.push({kind:'grid',j,cap:Infinity,cost:inW[j]?p[j]:0});
-      chg.sort((a,b)=>(a.cost-b.cost)||((a.kind==='pv'?0:1)-(b.kind==='pv'?0:1)));
-      let thrLeft=thr,di=0,ci=0;
-      while(di<dis.length&&ci<chg.length&&thrLeft>1e-9){
-        const d=dis[di],c=chg[ci];
-        if(d.pr<=c.cost/ETA)break;            // dalej nie obniza juz kosztu NEXBE — stop
-        const q=Math.min(d.cap,thrLeft,c.cap*ETA);
-        if(q<=1e-12){if(d.cap<=1e-12)di++;else ci++;continue;}
-        grid[d.j]-=q;d.cap-=q;thrLeft-=q;disch+=q;
-        const ch=q/ETA;
-        if(c.kind==='grid'){grid[c.j]+=ch;chgGrid+=ch;}
-        else{const t=Math.min(surLeft[c.j],ch);surLeft[c.j]-=t;pvCharge[c.j]+=t;chgPv+=t;}
-        c.cap-=ch;
-        if(d.cap<=1e-12)di++;
-        if(c.cap<=1e-12)ci++;
-      }
-    } else {
-      // HAPPY HOURS: oddaj D=min(thr,Dload); rozladuj najpierw POZA oknem, potem najdrozsze p_h.
-      const D=Math.min(thr,Dload);
-      if(D>1e-9){
-        const dord=[...Array(n).keys()].filter(j=>deficit[j]>1e-12)
-          .sort((a,b)=> inW[a]!==inW[b] ? (inW[a]?1:-1) : p[b]-p[a]);
-        let rem=D;
-        for(const j of dord){if(rem<=1e-12)break;const t=Math.min(grid[j],rem);grid[j]-=t;rem-=t;}
-        const dActual=D-rem;disch+=dActual;
-        const Chg=dActual/ETA;
-        // laduj najpierw z PV (najnizszy rdn = najmniejsza utrata kredytu eksportu)
-        let pvAvail=0;for(let j=0;j<n;j++)pvAvail+=surLeft[j];
-        const pvUse=Math.min(Chg,pvAvail);
-        if(pvUse>1e-12){
-          const so=[...Array(n).keys()].filter(j=>surLeft[j]>1e-12).sort((a,b)=>rdnH[a]-rdnH[b]);
-          let left=pvUse;
-          for(const j of so){if(left<=1e-12)break;const t=Math.min(surLeft[j],left);surLeft[j]-=t;left-=t;pvCharge[j]+=t;chgPv+=t;}
-        }
-        let gridChg=Chg-pvUse;
-        if(gridChg>1e-9){ // laduj najpierw W OKNIE (darmowe dla klienta), potem najtansze p_h; brak limitu mocy
-          const cord=[...Array(n).keys()].sort((a,b)=> inW[a]!==inW[b] ? (inW[a]?-1:1) : p[a]-p[b]);
-          grid[cord[0]]+=gridChg;chgGrid+=gridChg;
-        }
-      }
+    const dis=[...Array(n).keys()].filter(j=>deficit[j]>1e-12&&p[j]>0)
+              .map(j=>({j,cap:deficit[j],pr:p[j]})).sort((a,b)=>b.pr-a.pr);
+    const chg=[];
+    for(let j=0;j<n;j++) if(surLeft[j]>1e-12)
+      chg.push({kind:'pv',j,cap:surLeft[j],cost:o.pvExportOn?(rdnH[j]-o.pvExportFee):0});
+    for(let j=0;j<n;j++) chg.push({kind:'grid',j,cap:Infinity,cost:p[j]});
+    chg.sort((a,b)=>(a.cost-b.cost)||((a.kind==='pv'?0:1)-(b.kind==='pv'?0:1)));
+    let thrLeft=thr,di=0,ci=0;
+    while(di<dis.length&&ci<chg.length&&thrLeft>1e-9){
+      const d=dis[di],c=chg[ci];
+      if(d.pr<=c.cost/ETA)break;            // dalej arbitraz nieoplacalny — stop
+      const q=Math.min(d.cap,thrLeft,c.cap*ETA);
+      if(q<=1e-12){if(d.cap<=1e-12)di++;else ci++;continue;}
+      grid[d.j]-=q;d.cap-=q;thrLeft-=q;disch+=q;
+      const ch=q/ETA;
+      if(c.kind==='grid'){grid[c.j]+=ch;chgGrid+=ch;}
+      else{const t=Math.min(surLeft[c.j],ch);surLeft[c.j]-=t;pvCharge[c.j]+=t;chgPv+=t;}
+      c.cap-=ch;
+      if(d.cap<=1e-12)di++;
+      if(c.cap<=1e-12)ci++;
     }
   }
   return {grid,pvCharge,disch,chgGrid,chgPv};
@@ -371,13 +340,12 @@ function compute(){
   let pvProdTotal=0,pvAutoTotal=0,pvAutoInWindow=0,pvProdInWindow=0,pvExportTotal=0,pvExportRdnVol=0;
   let pvExportWin=0,pvExportWinRdn=0;     // eksport TYLKO w oknie promocji (rozliczany handlowo przez NEXBE)
   let baseVolNB=0,wRdnVolNB=0;            // baza BEZ magazynu (import w oknie) — do delty kosztu
-  let batChgGrid=0,batChgPv=0,batDisch=0; // bilans magazynu (kWh) — do noty
+  let batChgGrid=0,batChgPv=0,batDisch=0,pvBatChgWin=0; // bilans magazynu (kWh); pvBatChgWin=PV->magazyn w oknie
   const moAgg={};const qualMonthDt=new Set();
 
   const ETA=0.90;
   const batOn=bat>0&&cyc>0;
-  const happy=document.getElementById('batHappy').checked; // ladowanie w oknie dozwolone (happy hours)
-  const batOpt={batOn,happy,thr:bat*cyc,ETA,pvExportOn,pvExportFee};
+  const batOpt={batOn,thr:bat*cyc,ETA,pvExportOn,pvExportFee}; // jeden tryb: minimalizacja kosztu energii, niezalezny od okna
 
   if(!slp){
     // REALNY profil: dane godzinowe HOURLY — magazyn per doba kalendarzowa (indeks d). Patrz magazyn_SPEC.md.
@@ -401,10 +369,10 @@ function compute(){
         if(pvEnabled){pvProdTotal+=pvH;pvAutoTotal+=selfH;pvExportTotal+=sur;pvExportRdnVol+=sur*r;
           if(inW[j]){pvAutoInWindow+=selfH;pvProdInWindow+=pvH;pvExportWin+=sur;pvExportWinRdn+=sur*r;}}
       }
-      const res=dispatchDay(n,deficit,surplus,p,rdnH,inW,batOpt);
+      const res=dispatchDay(n,deficit,surplus,p,rdnH,batOpt);
       for(let j=0;j<n;j++) if(pvEnabled&&res.pvCharge[j]>1e-12){ // PV przeniesione z eksportu do autokonsumpcji
         pvAutoTotal+=res.pvCharge[j];pvExportTotal-=res.pvCharge[j];pvExportRdnVol-=res.pvCharge[j]*rdnH[j];
-        if(inW[j]){pvExportWin-=res.pvCharge[j];pvExportWinRdn-=res.pvCharge[j]*rdnH[j];}}
+        if(inW[j]){pvExportWin-=res.pvCharge[j];pvExportWinRdn-=res.pvCharge[j]*rdnH[j];pvBatChgWin+=res.pvCharge[j];}}
       batDisch+=res.disch;batChgGrid+=res.chgGrid;batChgPv+=res.chgPv;
       for(let j=0;j<n;j++){ // akumulacja okna z importu PO magazynie + baza bez magazynu
         if(!inW[j])continue;
@@ -438,10 +406,10 @@ function compute(){
         if(pvEnabled){pvProdTotal+=pvDzienH*days;pvAutoTotal+=selfH*days;pvExportTotal+=sur*days;pvExportRdnVol+=sur*r*days;
           if(inW[j]){pvAutoInWindow+=selfH*days;pvProdInWindow+=pvDzienH*days;pvExportWin+=sur*days;pvExportWinRdn+=sur*r*days;}}
       }
-      const res=dispatchDay(n,deficit,surplus,p,rdnH,inW,batOpt);
+      const res=dispatchDay(n,deficit,surplus,p,rdnH,batOpt);
       for(let j=0;j<n;j++) if(pvEnabled&&res.pvCharge[j]>1e-12){
         pvAutoTotal+=res.pvCharge[j]*days;pvExportTotal-=res.pvCharge[j]*days;pvExportRdnVol-=res.pvCharge[j]*rdnH[j]*days;
-        if(inW[j]){pvExportWin-=res.pvCharge[j]*days;pvExportWinRdn-=res.pvCharge[j]*rdnH[j]*days;}}
+        if(inW[j]){pvExportWin-=res.pvCharge[j]*days;pvExportWinRdn-=res.pvCharge[j]*rdnH[j]*days;pvBatChgWin+=res.pvCharge[j]*days;}}
       batDisch+=res.disch*days;batChgGrid+=res.chgGrid*days;batChgPv+=res.chgPv*days;
       for(let j=0;j<n;j++){
         if(!inW[j])continue;
@@ -481,7 +449,8 @@ function compute(){
   // SC widełki
   const scModel=pvProdTotal>0?100*pvAutoTotal/pvProdTotal:0;
   const scReal=pvProdTotal>0?100*pvAutoTotal*(1-korektaEff)/pvProdTotal:0;
-  const scWinModel=pvProdInWindow>0?100*pvAutoInWindow/pvProdInWindow:0;   // autokonsumpcja w oknie
+  // autokonsumpcja PV w oknie = (bezposrednia + zmagazynowana w oknie) / produkcja w oknie — jak rocznie
+  const scWinModel=pvProdInWindow>0?100*(pvAutoInWindow+pvBatChgWin)/pvProdInWindow:0;
   const scWinReal=scWinModel*(1-korektaEff);
 
   // eksport (model) — rozliczany TYLKO w oknie (NEXBE bilansuje pobor i oddanie klienta w czasie promocji)
@@ -537,6 +506,7 @@ function compute(){
     aWin.textContent=scWinReal.toFixed(0)+'%';
     document.getElementById('kAutoWinModel').textContent=korektaEff>0.005?'model (dane godz.): '+scWinModel.toFixed(0)+'%':'';
   } else { aWin.textContent='—'; document.getElementById('kAutoWinModel').textContent=''; }
+  document.getElementById('kProdWin').innerHTML=pvEnabled?f0(pvProdInWindow)+' <small>kWh</small>':'—';
 
   // ── Instalacja PV / rok (wartości realne; model jako podtekst) ──
   const pvKpiEl=document.getElementById('pvKpi');
@@ -584,15 +554,14 @@ function compute(){
 
   // Magazyn — nota (oba profile; realny per doba, G11 na dobie reprezentacyjnej)
   const batBd=document.getElementById('batBreakdown');
-  const happyOn=document.getElementById('batHappy').checked;
   if(bat>0&&cyc>0){
     batBd.style.display='block';
-    const dlt=batSavings; // >0 = magazyn obnizyl koszt importu w oknie
+    const dlt=batSavings; // >0 = magazyn obnizyl koszt importu w oknie; <0 = podniosl
     const znak=dlt>=0?'−':'+';
     const kol=dlt>=0?'#0a7d3c':'var(--warn)';
     batBd.innerHTML=
       `<span style="color:var(--ink2)">● Magazyn ${bat} kWh × ${cyc} cykli/dobę `+
-      `(${happyOn?'ładowanie w oknie dozwolone':'standardowe zarządzanie'}):</span> `+
+      `(ekonomiczny, niezależny od okna):</span> `+
       `<span style="color:var(--ink2)">import w oknie bez magazynu <b>${f0(costBaseNB)} zł</b> → `+
       `z magazynem <b>${f0(costBase)} zł</b></span> &nbsp; `+
       `<span style="color:${kol}">● Efekt magazynu: <b>${znak}${f0(Math.abs(dlt))} zł/rok</b></span><br>`+

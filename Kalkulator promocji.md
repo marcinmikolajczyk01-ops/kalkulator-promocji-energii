@@ -83,9 +83,11 @@ Dane godzinowe zawyżają autokonsumpcję (uśredniają chwilowe piki poboru w r
 ### KPI „Wynik na 1 klienta" — dwie sekcje (2026-06-10)
 Wszystkie wartości to wariant REALNY (ostrożny), spójny z nagłówkiem. Bilans energii się domyka.
 - **Promocja — w oknie:** Energia pobrana w oknie (`realImportWin`, + „% rocznego zużycia"),
-  Oddana w oknie (`realExportWin`), Autokonsumpcja w oknie (`scWinReal`=`pvAutoInWindow/pvProdInWindow`,
-  real główna + model podtekst), Śr. RDN w oknie, Godzin ujemnych w oknie.
-- **Instalacja PV — rocznie** (gdy PV>0): Produkcja PV, Autokonsumpcja (REALNA główna `scReal`,
+  Oddana w oknie (`realExportWin`), **Produkcja PV w oknie** (`pvProdInWindow`),
+  **Autokonsumpcja PV w oknie** (`scWinReal`=`(pvAutoInWindow+pvBatChgWin)/pvProdInWindow`, real główna
+  + model podtekst — wlicza PV zmagazynowane w oknie, więc dla okna=rok = autokonsumpcja roczna),
+  Śr. RDN w oknie, Godzin ujemnych w oknie.
+- **Instalacja PV — rocznie** (gdy PV>0): Produkcja PV, Autokonsumpcja PV (REALNA główna `scReal`,
   model `scModel` jako szary podtekst), Energia pobrana / rok (`realImportAnnual`),
   Oddana do sieci / rok (`realExportAnnual`).
 - `realImport/Export = model + delta` (delta = utracona autokonsumpcja). Bilans: pobrana+autokons=zużycie,
@@ -107,28 +109,24 @@ przez OBA profile. Realny: doba kalendarzowa (grupowanie po `HOURLY.d`). G11: do
 (CELLS pogrupowane po `mo_wk`, 24 godziny), wynik skalowany przez liczbę dni `DAYS[mo_wk]`.
 Magazyn jest wliczony w `baseVol` (nie ma już osobnego `extraBat`).
 - Parametry: `bat` [kWh] = pojemność C, `cyc` cykle/dobę (domyślnie 1), `ETA=0.90` (stała w kodzie).
-- Checkbox **„Ładowanie w happy hours dozwolone"** (`#batHappy`, domyślnie OFF).
-- Per doba: `thr=C*cyc`, `Dload=Σ deficit`, `D=min(thr,Dload)` (oddaje **nie więcej niż realny deficyt**), `Chg=D/ETA`.
-- **OFF (standard) = minimalizacja kosztu NETTO NEXBE, nigdy go nie podnosi** (poprawka 2026-06-10).
-  NEXBE płaci tylko za import w oknie (i traci kredyt eksportu przy eksporcie ON), więc dyspozycja:
-  - rozładowuje TYLKO w godziny W OKNIE o dodatnim `p_h` (zbija drogi import, za który płaci NEXBE);
-  - ładuje z najtańszych źródeł DLA NEXBE: sieć poza oknem = koszt 0 (płaci klient), sieć w oknie = `p_h`
-    (gdy ujemny — zysk), PV = utracony kredyt eksportu `(rdn−opłata)` przy eksporcie ON / 0 przy OFF;
-  - przy remisie kosztu preferuje PV (rośnie autokonsumpcja);
-  - paruje najdroższy sink z najtańszym źródłem dopóki `p_d > p_c/ETA` → każdy ruch obniża koszt NEXBE.
-  - Wcześniejszy błąd: arbitraż minimalizował koszt CAŁKOWITY klienta (rozładowanie poza oknem,
-    pochłanianie zyskownej nadwyżki PV) → przy eksporcie ON + tanim oknie PODNOSIŁ koszt NEXBE.
-- **ON (happy hours):** rozładowuje najpierw POZA oknem (korzyść klienta), ładuje najpierw W OKNIE
-  (darmowe dla klienta) → import w oknie = ekspozycja NEXBE rośnie przy cenach dodatnich.
-- Źródło ładowania: najpierw nadwyżka PV (przenosi z eksportu do autokonsumpcji, pomniejsza kredyt
-  eksportu o `pv_used*(rdn−opłata)/1000`), reszta z sieci.
-- Koszt = `Σ_{h∈okno} grid_h * p_h / 1000` na imporcie PO dyspozycji (`baseVol`/`wRdnVol`).
-- Nota „Efekt magazynu" (`#batBreakdown`) pokazuje koszt importu w oknie bez/ z magazynem + bilans kWh.
-- Sprzężenie z niedopasowaniem (v2): `tlumik=min(1,(bat*cyc)/avg_daily_import)` zmniejsza korektę — bez zmian.
-- **Testy akceptacyjne:** `node test_magazyn.js` (shim DOM ładuje prawdziwy skrypt z HTML). 5/5 PASS:
-  T1 cały rok standard bez PV koszt spada (1395→871); T2 +PV spada bardziej (1055→360);
-  T3 okno 18–21 dodatnie ON≫OFF (2→1624, ekspozycja +1622); T4 czerwcowe weekendy 11–16 ujemne
-  ON nie rośnie (ekspozycja ~0, NEXBE zarabia); T5 ogromny magazyn oddaje ≤ realny deficyt.
+- **JEDEN tryb, NIEZALEŻNY OD OKNA** (przebudowa 2026-06-10; usunięto checkbox happy-hours).
+  Magazyn = cecha instalacji klienta: pracuje ekonomicznie cały rok, minimalizując KOSZT ENERGII
+  (realne ceny `p_h=rdn+adder`), niezależnie od okna promocji — „gra na korzyść tego, kto płaci".
+- `dispatchDay` (per doba): paruje najdroższy deficyt (rozładowanie, wartość=`p_h`, dowolna godzina)
+  z najtańszym źródłem ładowania (PV: utracony kredyt eksportu `rdn−fee` przy eksporcie ON, inaczej 0;
+  sieć: `p_h`), dopóki `p_d > p_c/ETA`. Brak referencji do `inW` → dyspozycja jest window-independent.
+- **Skutek (kluczowy):** dane ROCZNE (pobór, autokonsumpcja, eksport) zależą tylko od PV/magazynu/
+  zużycia, NIE od okna promocji (potwierdza test T3/T6: rozrzut 0 kWh między oknami).
+- Koszt promocji NEXBE = `Σ_{h∈okno} grid_h*p_h/1000 − eksport_w_oknie` (uczciwy wycinek przepływów).
+  W drogim oknie magazyn zbija koszt; w TANIM oknie z eksportem może go **podnieść** (klient magazynuje
+  swoją nadwyżkę PV zamiast eksportować → mniej kredytu eksportu dla NEXBE) — to realne, nie błąd.
+- Nota „Efekt magazynu" (`#batBreakdown`) pokazuje koszt importu w oknie bez/z magazynem + bilans kWh
+  (delta może być na minus = magazyn podniósł koszt w danym oknie).
+- Sprzężenie z niedopasowaniem (v2): `tlumik=min(1,(bat*cyc)/avg_daily_import)` zmniejsza korektę.
+- **Testy akceptacyjne:** `node test_magazyn.js` (shim DOM ładuje prawdziwy skrypt z HTML). 9/9 PASS:
+  T1/T2 cały rok koszt spada; **T3/T6 dane roczne niezależne od okna** (rozrzut 0 kWh);
+  T4 tanie okno+eksport — koszt może wzrosnąć (realnie); T5 ogromny magazyn oddaje ≤ realny deficyt;
+  T7 G11 obniża koszt; T8 eksport liczony w oknie; T9 korekta rusza koszt I eksport.
 
 ## TODO / pomysły na rozwój
 - Potwierdzić naturę opłaty handlowej (zł/MWh vs zł/mc) i ewentualnie poprawić model.

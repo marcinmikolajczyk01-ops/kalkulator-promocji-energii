@@ -62,6 +62,11 @@ Dane godzinowe zawyżają autokonsumpcję (uśredniają chwilowe piki poboru w r
 - `korektaEff = (korekta/100) × (1 − tlumik_magazynu)` — magazyn pochłania piki, zmniejsza błąd.
 - `tlumik = min(1, bat×cyc / avg_daily_import)`.
 - `delta_import_window = pvAutoInWindow × korektaEff`; `costMismatch = delta × (meanRdn + adder) / 1000`.
+- **Domknięcie energetyczne (2026-06-10):** utracona (zawyżona) autokonsumpcja to TA SAMA energia,
+  która realnie rozjeżdża się na +IMPORT (kara) i +EKSPORT (kredyt). `delta_export = delta_import`
+  (już NIE 0 jak w v1 spec). `exportMismatchCredit = delta × (meanRdn − fee)/1000` (gdy eksport ON).
+  Netto kary niedopasowania = `delta × (adder + fee)/1000` (meanRdn się skraca) — zawsze dodatnia,
+  ale mniejsza niż sam import. Zmiana korekty rusza I koszt, I eksport (KPI eksportu reaguje).
 - Wyniki: widełki SC (model → realnie) i koszt (optymistycznie → ostrożnie). Nagłówek = wariant ostrożny.
 
 ### Eksport nadwyżek (rozliczany W OKNIE — poprawka 2026-06-10)
@@ -72,8 +77,18 @@ Dane godzinowe zawyżają autokonsumpcję (uśredniają chwilowe piki poboru w r
 - W trybie OFF magazyn pochłania nadwyżkę PV W OKNIE tylko, gdy to się opłaca NEXBE (koszt = utracony
   kredyt eksportu w oknie); nadwyżkę POZA oknem może brać za darmo (eksport poza oknem nie jest NEXBE).
 - `pvExportTotal`/`pvExportRdnVol` zostają ROCZNE — zasilają KPI „Oddana do sieci / rok (eksport)".
-- Nagłówek: netto NEXBE = kostReal − wartoscEksportu. Breakdown pokazuje „Wartość eksportu w oknie (kWh)".
+- Nagłówek: netto NEXBE = kostReal − wartoscEksportuReal. Breakdown: „Wartość eksportu w oknie (kWh)".
 - Skutek: wąskie okna bez nadwyżki PV (np. wieczór) nie dostają już fałszywego kredytu za roczny eksport.
+
+### KPI „Wynik na 1 klienta" — dwie sekcje (2026-06-10)
+Wszystkie wartości to wariant REALNY (ostrożny), spójny z nagłówkiem. Bilans energii się domyka.
+- **Promocja — w oknie:** Energia pobrana w oknie (`realImportWin`, + „% rocznego zużycia"),
+  Oddana w oknie (`realExportWin`), Śr. RDN w oknie, Godzin ujemnych w oknie.
+- **Instalacja PV — rocznie** (gdy PV>0): Produkcja PV, Autokonsumpcja (REALNA główna `scReal`,
+  model `scModel` jako szary podtekst), Energia pobrana / rok (`realImportAnnual`),
+  Oddana do sieci / rok (`realExportAnnual`).
+- `realImport/Export = model + delta` (delta = utracona autokonsumpcja). Bilans: pobrana+autokons=zużycie,
+  oddana+autokons=produkcja. „Udział w zużyciu" → podtekst „% rocznego zużycia" pod energią pobraną.
 
 ### Rzeczywiste wartości testowe (3 kWp, 2500 kWh/rok)
 - Realny 3 kWp: SC model ~35%, realnie (15%.) ~29% ✓

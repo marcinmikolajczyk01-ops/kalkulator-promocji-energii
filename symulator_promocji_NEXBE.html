@@ -169,18 +169,20 @@ b.acc{color:var(--accent)}
       </div>
 
       <div class="card">
-        <h2>Wynik na 1 klienta</h2>
+        <h2>Wynik na 1 klienta <span style="font-weight:400;font-size:11px;color:var(--ink2)">· wartości realne (ostrożne)</span></h2>
+        <div style="font-size:11px;font-weight:700;color:var(--ink2);letter-spacing:.04em;text-transform:uppercase;margin:2px 0 6px;border-bottom:1px solid var(--line);padding-bottom:3px">Promocja — w oknie (płaci/bilansuje NEXBE)</div>
         <div class="kpi">
-          <div class="box"><div class="lab">Energia pobrana w oknie / rok</div><div class="val mono" id="kVol">—</div></div>
-          <div class="box"><div class="lab">Udział w zużyciu</div><div class="val mono" id="kShare">—</div></div>
+          <div class="box"><div class="lab">Energia pobrana w oknie / rok</div><div class="val mono" id="kVol">—</div><div id="kShare" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
+          <div class="box"><div class="lab">Oddana w oknie (eksport) / rok</div><div class="val mono" id="kExportWin">—</div><div id="kExportWinModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
           <div class="box"><div class="lab">Śr. RDN w oknie</div><div class="val mono" id="kRdn">—</div></div>
           <div class="box"><div class="lab">Godzin ujemnych w oknie</div><div class="val mono" id="kNeg">—</div></div>
         </div>
-        <div class="kpi" id="pvKpi" style="display:none;margin-top:8px">
+        <div id="pvKpiHdr" style="display:none;font-size:11px;font-weight:700;color:var(--ink2);letter-spacing:.04em;text-transform:uppercase;margin:12px 0 6px;border-bottom:1px solid var(--line);padding-bottom:3px">Instalacja PV / klient — rocznie</div>
+        <div class="kpi" id="pvKpi" style="display:none;margin-top:0">
           <div class="box"><div class="lab">Produkcja PV / rok</div><div class="val mono" id="kPvProd">—</div></div>
-          <div class="box"><div class="lab">Autokonsumpcja</div><div class="val mono" id="kPvAuto">—</div><div id="kPvAutoReal" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
-          <div class="box"><div class="lab">Import z sieci / rok (całość)</div><div class="val mono" id="kPvImport">—</div></div>
-          <div class="box"><div class="lab">Oddana do sieci / rok (eksport)</div><div class="val mono" id="kPvExport">—</div></div>
+          <div class="box"><div class="lab">Autokonsumpcja / rok</div><div class="val mono" id="kPvAuto">—</div><div id="kPvAutoModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
+          <div class="box"><div class="lab">Energia pobrana / rok</div><div class="val mono" id="kPvImport">—</div></div>
+          <div class="box"><div class="lab">Oddana do sieci / rok (eksport)</div><div class="val mono" id="kPvExport">—</div><div id="kPvExportModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
         </div>
         <div style="font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:3px">Z czego składa się koszt (zł/rok/klient)</div>
         <div class="bd" id="bd"></div>
@@ -479,12 +481,24 @@ function compute(){
   const scModel=pvProdTotal>0?100*pvAutoTotal/pvProdTotal:0;
   const scReal=pvProdTotal>0?100*pvAutoTotal*(1-korektaEff)/pvProdTotal:0;
 
-  // eksport — rozliczany TYLKO w oknie (NEXBE bilansuje pobor i oddanie klienta w czasie promocji)
+  // eksport (model) — rozliczany TYLKO w oknie (NEXBE bilansuje pobor i oddanie klienta w czasie promocji)
   const wartoscEksportu=pvExportOn?(pvExportWinRdn-pvExportWin*pvExportFee)/1000:0;
 
-  // koszt: model (optymistyczny, bez korekty mismatch) i ostrozny (z korekta)
+  // Niedopasowanie domkniete energetycznie: utracona (zawyzona) autokonsumpcja to TA SAMA energia,
+  // ktora realnie rozjezdza sie chwilowo na +IMPORT (kara) i +EKSPORT (kredyt). Oba reaguja na korekte.
+  const deltaExportWindow=deltaImportWindow;                       // +eksport w oknie = +import w oknie
+  const exportMismatchCredit=pvExportOn?deltaExportWindow*(meanRdn-pvExportFee)/1000:0;
+  const deltaAnnual=pvEnabled?pvAutoTotal*korektaEff:0;            // roczna utracona autokonsumpcja
+  // realne (ostrozne) wolumeny do KPI — reaguja na korekte
+  const realImportWin=totalVol+deltaImportWindow;
+  const realExportWin=pvExportWin+(pvEnabled?deltaExportWindow:0);
+  const realImportAnnual=(annualVol-pvAutoTotal)+deltaAnnual;
+  const realExportAnnual=pvExportTotal+deltaAnnual;
+
+  // koszt: model (optymistyczny, bez korekty) i ostrozny (z korekta: +import w oknie, -kredyt eksportu w oknie)
+  const wartoscEksportuReal=wartoscEksportu+exportMismatchCredit;  // kredyt eksportu w wariancie ostroznym
   const kostModel=kostPromo-wartoscEksportu;
-  const kostReal=kostPromo+costMismatch-wartoscEksportu;
+  const kostReal=kostPromo+costMismatch-wartoscEksportuReal;
   const cost=kostReal; // glowna liczba = wariant ostrozny
 
   const f0=x=>Math.round(x).toLocaleString('pl-PL');
@@ -505,21 +519,29 @@ function compute(){
     optEl.textContent='optymistycznie: '+(kostModel<0?'+ ':'')+f0(Math.abs(kostModel))+' zł';
   } else optEl.style.display='none';
 
-  document.getElementById('kVol').innerHTML=f0(totalVol)+' <small>kWh</small>';
-  document.getElementById('kShare').textContent=annualVol>0?(100*totalVol/annualVol).toFixed(0)+'%':'—';
+  // ── Promocja w oknie (wartości realne/ostrożne) ──
+  document.getElementById('kVol').innerHTML=f0(realImportWin)+' <small>kWh</small>';
+  document.getElementById('kShare').textContent=annualVol>0?(100*realImportWin/annualVol).toFixed(0)+'% rocznego zużycia':'';
   document.getElementById('kRdn').innerHTML=Math.round(meanRdn)+' <small>zł/MWh</small>';
   document.getElementById('kNeg').textContent=winHrs>0?(100*negHrs/winHrs).toFixed(0)+'%':'—';
+  const eWin=document.getElementById('kExportWin');
+  if(pvEnabled){
+    eWin.innerHTML=f0(realExportWin)+' <small>kWh</small>'+(pvExportOn?'':' <small style="color:var(--ink2)">(bez rozl.)</small>');
+    document.getElementById('kExportWinModel').textContent=korektaEff>0.005?'model: '+f0(pvExportWin)+' kWh':'';
+  } else { eWin.textContent='—'; document.getElementById('kExportWinModel').textContent=''; }
 
-  // PV KPI row
+  // ── Instalacja PV / rok (wartości realne; model jako podtekst) ──
   const pvKpiEl=document.getElementById('pvKpi');
   pvKpiEl.style.display=pvEnabled?'grid':'none';
+  document.getElementById('pvKpiHdr').style.display=pvEnabled?'block':'none';
   if(pvEnabled){
     document.getElementById('kPvProd').innerHTML=f0(pvProdTotal)+' <small>kWh</small>';
-    document.getElementById('kPvAuto').textContent=scModel.toFixed(0)+'%';
-    document.getElementById('kPvAutoReal').textContent='realnie: ~'+scReal.toFixed(0)+'%';
-    document.getElementById('kPvImport').innerHTML=f0(annualVol-pvAutoTotal)+' <small>kWh</small>';
-    document.getElementById('kPvExport').innerHTML=f0(pvExportTotal)+' <small>kWh</small>'+
+    document.getElementById('kPvAuto').textContent=scReal.toFixed(0)+'%';
+    document.getElementById('kPvAutoModel').textContent=korektaEff>0.005?'model (dane godz.): '+scModel.toFixed(0)+'%':'';
+    document.getElementById('kPvImport').innerHTML=f0(realImportAnnual)+' <small>kWh</small>';
+    document.getElementById('kPvExport').innerHTML=f0(realExportAnnual)+' <small>kWh</small>'+
       (pvExportOn?'':' <small style="color:var(--ink2)">(bez rozliczenia)</small>');
+    document.getElementById('kPvExportModel').textContent=korektaEff>0.005?'model: '+f0(pvExportTotal)+' kWh':'';
   }
 
   // breakdown bar
@@ -539,12 +561,13 @@ function compute(){
     if(pvExportOn){
       const nc=kostReal<0?'#0a7d3c':'inherit';
       html+=`<span style="color:var(--ink2)">● Koszt promocji: <b>${f0(kostPromo)} zł</b></span> &nbsp; `+
-            `<span style="color:#1f8f4e">● Wartość eksportu w oknie (${f0(pvExportWin)} kWh): <b>${f0(wartoscEksportu)} zł</b></span> &nbsp; `+
+            `<span style="color:#1f8f4e">● Wartość eksportu w oknie (${f0(realExportWin)} kWh): <b>${f0(wartoscEksportuReal)} zł</b></span> &nbsp; `+
             `<span style="color:${nc}">● Netto: <b>${kostReal<0?'+ ':''} ${f0(Math.abs(kostReal))} zł</b></span><br>`;
     }
     if(costMismatch>0.5){
-      html+=`<span style="color:var(--warn)">● Niedopasowanie czasowe: +${f0(costMismatch)} zł/rok `+
+      html+=`<span style="color:var(--warn)">● Niedopasowanie czasowe (import w oknie): +${f0(costMismatch)} zł/rok `+
             `(SC model ${scModel.toFixed(0)}% → realnie ~${scReal.toFixed(0)}%`+
+            `${pvExportOn?'; eksport +'+f0(deltaExportWindow)+' kWh w kredycie':''}`+
             `${tlumik>0.05?'; tlumik magazynu '+(100*tlumik).toFixed(0)+'%':''})</span>`;
     }
     if(!html)html='<span style="color:var(--ink2)">● Koszt liczony na imporcie netto (PV redukuje import w oknie)</span>';

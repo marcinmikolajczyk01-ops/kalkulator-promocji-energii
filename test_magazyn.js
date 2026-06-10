@@ -14,7 +14,8 @@ let script = m[1];
 script = script.replace('  // hour chart (na imporcie netto)',
   'globalThis.__out={cost,kostModel,kostReal,kostPromo,costBase,costBaseNB,batSavings,batDisch,' +
   'baseVol,baseVolNB,winHrs,negHrs,annualVol,pvAutoTotal,pvProdTotal,wartoscEksportu,meanRdn,' +
-  'batChgGrid,batChgPv,extraVol,totalVol,pvExportWin,pvExportTotal};\n  // hour chart (na imporcie netto)');
+  'batChgGrid,batChgPv,extraVol,totalVol,pvExportWin,pvExportTotal,realExportWin,realExportAnnual,' +
+  'realImportAnnual,exportMismatchCredit,wartoscEksportuReal,korektaEff,costMismatch};\n  // hour chart (na imporcie netto)');
 // Eksponuj compute/state po definicji
 script += '\nglobalThis.__compute=compute;globalThis.__state=state;';
 
@@ -187,6 +188,25 @@ console.log('=== Testy akceptacyjne magazyn (profil REALNY, dane godzinowe) ===\
     eve.pvExportWin < 0.1 * yr.pvExportTotal &&               // wieczór: znikomy eksport w oknie
     mid.pvExportWin > eve.pvExportWin &&                      // południe > wieczór
     mid.pvExportWin < yr.pvExportTotal                        // ale mniej niż roczny
+  ), '\n');
+}
+
+// T9: Korekta autokonsumpcji wpływa NA OBA — koszt NEXBE i eksport (domknięcie energetyczne).
+// Wcześniej eksport stał w miejscu mimo zmiany korekty (delta_export=0).
+{
+  const base = { prof:'real', pvKwp:5, pvExport:true, pvExportFee:25, bat:0,
+                 dt:'all', months:allM, hStart:1, hEnd:24 };
+  const lo = run(Object.assign({}, base, { pvMismatch:0  }));   // bez korekty
+  const hi = run(Object.assign({}, base, { pvMismatch:30 }));   // duża korekta
+  console.log('T9  Korekta autokonsumpcji wpływa na koszt I na eksport');
+  console.log('    korekta 0% : kostReal', z(lo.kostReal), '| eksport w oknie', lo.realExportWin.toFixed(0), 'kWh | kredyt', z(lo.wartoscEksportuReal));
+  console.log('    korekta 30%: kostReal', z(hi.kostReal), '| eksport w oknie', hi.realExportWin.toFixed(0), 'kWh | kredyt', z(hi.wartoscEksportuReal));
+  console.log('    eksport reaguje (Δ kWh) =', (hi.realExportWin-lo.realExportWin).toFixed(0),
+              '| dodatkowy kredyt eksportu =', z(hi.exportMismatchCredit));
+  console.log('    =>', check(
+    hi.realExportWin > lo.realExportWin + 1 &&      // eksport rośnie z korektą (urealnienie)
+    hi.exportMismatchCredit > 1 &&                  // jest kredyt eksportu z niedopasowania
+    hi.kostReal > lo.kostReal + 1                   // koszt też się zmienia (netto wyższy = ostrożniej)
   ), '\n');
 }
 

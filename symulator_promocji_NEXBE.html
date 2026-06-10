@@ -174,6 +174,7 @@ b.acc{color:var(--accent)}
         <div class="kpi">
           <div class="box"><div class="lab">Energia pobrana w oknie / rok</div><div class="val mono" id="kVol">—</div><div id="kShare" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
           <div class="box"><div class="lab">Oddana w oknie (eksport) / rok</div><div class="val mono" id="kExportWin">—</div><div id="kExportWinModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
+          <div class="box"><div class="lab">Autokonsumpcja w oknie</div><div class="val mono" id="kAutoWin">—</div><div id="kAutoWinModel" style="font-size:11px;color:var(--ink2);margin-top:2px"></div></div>
           <div class="box"><div class="lab">Śr. RDN w oknie</div><div class="val mono" id="kRdn">—</div></div>
           <div class="box"><div class="lab">Godzin ujemnych w oknie</div><div class="val mono" id="kNeg">—</div></div>
         </div>
@@ -367,7 +368,7 @@ function compute(){
   const pvAnnual=pvKwp*PV.kWh_per_kWp;
 
   let baseVol=0,wRdnVol=0,negHrs=0,winHrs=0,annualVol=0,batDays=0;
-  let pvProdTotal=0,pvAutoTotal=0,pvAutoInWindow=0,pvExportTotal=0,pvExportRdnVol=0;
+  let pvProdTotal=0,pvAutoTotal=0,pvAutoInWindow=0,pvProdInWindow=0,pvExportTotal=0,pvExportRdnVol=0;
   let pvExportWin=0,pvExportWinRdn=0;     // eksport TYLKO w oknie promocji (rozliczany handlowo przez NEXBE)
   let baseVolNB=0,wRdnVolNB=0;            // baza BEZ magazynu (import w oknie) — do delty kosztu
   let batChgGrid=0,batChgPv=0,batDisch=0; // bilans magazynu (kWh) — do noty
@@ -398,7 +399,7 @@ function compute(){
         inW[j]=inWindowH(HOURLY.mo[i],HOURLY.wk[i],HOURLY.h[i]);
         annualVol+=consH;
         if(pvEnabled){pvProdTotal+=pvH;pvAutoTotal+=selfH;pvExportTotal+=sur;pvExportRdnVol+=sur*r;
-          if(inW[j]){pvAutoInWindow+=selfH;pvExportWin+=sur;pvExportWinRdn+=sur*r;}}
+          if(inW[j]){pvAutoInWindow+=selfH;pvProdInWindow+=pvH;pvExportWin+=sur;pvExportWinRdn+=sur*r;}}
       }
       const res=dispatchDay(n,deficit,surplus,p,rdnH,inW,batOpt);
       for(let j=0;j<n;j++) if(pvEnabled&&res.pvCharge[j]>1e-12){ // PV przeniesione z eksportu do autokonsumpcji
@@ -435,7 +436,7 @@ function compute(){
         rdnH[j]=r; deficit[j]=def; surplus[j]=sur; p[j]=r+adder;
         inW[j]=inWindow(c); moA[j]=c.mo; wkA[j]=c.wk;
         if(pvEnabled){pvProdTotal+=pvDzienH*days;pvAutoTotal+=selfH*days;pvExportTotal+=sur*days;pvExportRdnVol+=sur*r*days;
-          if(inW[j]){pvAutoInWindow+=selfH*days;pvExportWin+=sur*days;pvExportWinRdn+=sur*r*days;}}
+          if(inW[j]){pvAutoInWindow+=selfH*days;pvProdInWindow+=pvDzienH*days;pvExportWin+=sur*days;pvExportWinRdn+=sur*r*days;}}
       }
       const res=dispatchDay(n,deficit,surplus,p,rdnH,inW,batOpt);
       for(let j=0;j<n;j++) if(pvEnabled&&res.pvCharge[j]>1e-12){
@@ -480,6 +481,8 @@ function compute(){
   // SC widełki
   const scModel=pvProdTotal>0?100*pvAutoTotal/pvProdTotal:0;
   const scReal=pvProdTotal>0?100*pvAutoTotal*(1-korektaEff)/pvProdTotal:0;
+  const scWinModel=pvProdInWindow>0?100*pvAutoInWindow/pvProdInWindow:0;   // autokonsumpcja w oknie
+  const scWinReal=scWinModel*(1-korektaEff);
 
   // eksport (model) — rozliczany TYLKO w oknie (NEXBE bilansuje pobor i oddanie klienta w czasie promocji)
   const wartoscEksportu=pvExportOn?(pvExportWinRdn-pvExportWin*pvExportFee)/1000:0;
@@ -529,6 +532,11 @@ function compute(){
     eWin.innerHTML=f0(realExportWin)+' <small>kWh</small>'+(pvExportOn?'':' <small style="color:var(--ink2)">(bez rozl.)</small>');
     document.getElementById('kExportWinModel').textContent=korektaEff>0.005?'model: '+f0(pvExportWin)+' kWh':'';
   } else { eWin.textContent='—'; document.getElementById('kExportWinModel').textContent=''; }
+  const aWin=document.getElementById('kAutoWin');
+  if(pvEnabled){
+    aWin.textContent=scWinReal.toFixed(0)+'%';
+    document.getElementById('kAutoWinModel').textContent=korektaEff>0.005?'model (dane godz.): '+scWinModel.toFixed(0)+'%':'';
+  } else { aWin.textContent='—'; document.getElementById('kAutoWinModel').textContent=''; }
 
   // ── Instalacja PV / rok (wartości realne; model jako podtekst) ──
   const pvKpiEl=document.getElementById('pvKpi');

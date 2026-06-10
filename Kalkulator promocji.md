@@ -83,7 +83,8 @@ Dane godzinowe zawyżają autokonsumpcję (uśredniają chwilowe piki poboru w r
 ### KPI „Wynik na 1 klienta" — dwie sekcje (2026-06-10)
 Wszystkie wartości to wariant REALNY (ostrożny), spójny z nagłówkiem. Bilans energii się domyka.
 - **Promocja — w oknie:** Energia pobrana w oknie (`realImportWin`, + „% rocznego zużycia"),
-  Oddana w oknie (`realExportWin`), Śr. RDN w oknie, Godzin ujemnych w oknie.
+  Oddana w oknie (`realExportWin`), Autokonsumpcja w oknie (`scWinReal`=`pvAutoInWindow/pvProdInWindow`,
+  real główna + model podtekst), Śr. RDN w oknie, Godzin ujemnych w oknie.
 - **Instalacja PV — rocznie** (gdy PV>0): Produkcja PV, Autokonsumpcja (REALNA główna `scReal`,
   model `scModel` jako szary podtekst), Energia pobrana / rok (`realImportAnnual`),
   Oddana do sieci / rok (`realExportAnnual`).

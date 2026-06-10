@@ -51,7 +51,8 @@ od 0, ujemne na zielono) + tabela kosztu wg miesiąca.
 Karta „5 · Własna fotowoltaika (PV)" — suwak 0–15 kWp (krok 0,5; domyślnie 5; 0 = brak PV).
 
 ### Architektura danych
-- **Realny profil:** stała `HOURLY` (8 711 godzin z `dane_godzinowe.json`): mo, wk, h, rdn, cons, pvk; `pv_h = kWp * pvk[i]`; autokonsumpcja per godzina.
+- **Realny profil:** stała `HOURLY` (8 711 godzin z `dane_godzinowe.json`): **d** (indeks dnia 0..363), mo, wk, h, rdn, cons, pvk; `pv_h = kWp * pvk[i]`; autokonsumpcja per godzina. Pole `d` grupuje godziny w doby (potrzebne dla magazynu).
+- **Wstrzykiwanie danych:** `node inject_hourly.js` czyta `dane_godzinowe.json` z dysku i podmienia linię `const HOURLY = …;` w HTML (nie wczytywać JSON-a ręcznie do edytora — ~320 KB).
 - **G11 profil:** stała `CELLS` (576 komórek) + `PV` (within_day_fraction); autokonsumpcja per dzień per godzina dla każdej komórki.
 - `pvk[i]` = 983,9 × monthly_share[mo] / days_in_month[mo] × within_day_fraction[mo][h==24?0:h].
 
@@ -77,6 +78,26 @@ Dane godzinowe zawyżają autokonsumpcję (uśredniają chwilowe piki poboru w r
 - Potwierdzić uzysk 983,9 kWh/kWp/rok poza instalacją referencyjną.
 - Eksport liczony rocznie — łatwo przełączyć na „tylko okno" jeśli biznes zdecyduje.
 - Brak modelu net-billing/depozytu — uproszczenie; eksport wyceniany po RDN.
+
+## Magazyn energii — dyspozycja dobowa (2026-06-10, wg magazyn_SPEC.md)
+Profil REALNY: magazyn liczony **godzinowo per doba** (grupowanie po `HOURLY.d`), merit-order.
+G11 zostaje na starym modelu wolumenowym (`extraBat = bat*cyc*batDays`) — brak danych godzinowych.
+- Parametry: `bat` [kWh] = pojemność C, `cyc` cykle/dobę (domyślnie 1), `ETA=0.90` (stała w kodzie).
+- Checkbox **„Ładowanie w happy hours dozwolone"** (`#batHappy`, domyślnie OFF).
+- Per doba: `thr=C*cyc`, `Dload=Σ deficit`, `D=min(thr,Dload)` (oddaje **nie więcej niż realny deficyt**), `Chg=D/ETA`.
+- **OFF (standard):** ekonomiczny merit-order z warunkiem opłacalności — paruje najdroższy deficyt
+  (rozładowanie) z najtańszym źródłem (PV→sieć), dopóki `p_d > p_c/ETA`. Magazyn obniża koszt.
+- **ON (happy hours):** rozładowuje najpierw POZA oknem (korzyść klienta), ładuje najpierw W OKNIE
+  (darmowe dla klienta) → import w oknie = ekspozycja NEXBE rośnie przy cenach dodatnich.
+- Źródło ładowania: najpierw nadwyżka PV (przenosi z eksportu do autokonsumpcji, pomniejsza kredyt
+  eksportu o `pv_used*(rdn−opłata)/1000`), reszta z sieci.
+- Koszt = `Σ_{h∈okno} grid_h * p_h / 1000` na imporcie PO dyspozycji (`baseVol`/`wRdnVol`).
+- Nota „Efekt magazynu" (`#batBreakdown`) pokazuje koszt importu w oknie bez/ z magazynem + bilans kWh.
+- Sprzężenie z niedopasowaniem (v2): `tlumik=min(1,(bat*cyc)/avg_daily_import)` zmniejsza korektę — bez zmian.
+- **Testy akceptacyjne:** `node test_magazyn.js` (shim DOM ładuje prawdziwy skrypt z HTML). 5/5 PASS:
+  T1 cały rok standard bez PV koszt spada (1395→871); T2 +PV spada bardziej (1055→360);
+  T3 okno 18–21 dodatnie ON≫OFF (2→1624, ekspozycja +1622); T4 czerwcowe weekendy 11–16 ujemne
+  ON nie rośnie (ekspozycja ~0, NEXBE zarabia); T5 ogromny magazyn oddaje ≤ realny deficyt.
 
 ## TODO / pomysły na rozwój
 - Potwierdzić naturę opłaty handlowej (zł/MWh vs zł/mc) i ewentualnie poprawić model.
